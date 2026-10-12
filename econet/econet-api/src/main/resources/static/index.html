@@ -28,6 +28,13 @@
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.4; transform: scale(1.15); }
         }
+        /* Data-source labels: real Open-Meteo data vs simulated demo values */
+        .data-live, .data-sim {
+            display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 9999px;
+            font-size: 10px; font-weight: 600; letter-spacing: 0; text-transform: none; vertical-align: middle;
+        }
+        .data-live { background: #d1fae5; color: #047857; }
+        .data-sim { background: #f1f5f9; color: #64748b; border: 1px dashed #cbd5e1; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
@@ -100,10 +107,7 @@
                 <button onclick="switchTab('report')" class="tab-btn px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" data-tab="report">
                     <span class="flex items-center space-x-2"><i data-lucide="file-text" class="w-4 h-4"></i><span>24h Audit</span></span>
                 </button>
-                <button onclick="switchTab('forecast')" class="tab-btn px-3.5 py-2 text-sm font-semibold rounded-lg text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200 transition" data-tab="forecast">
-                    <span class="flex items-center space-x-1.5"><i data-lucide="sparkles" class="w-4 h-4 text-indigo-600"></i><span>3-Month ML Forecast</span><span class="ml-1 px-1.5 py-0.2 bg-indigo-600 text-white text-[10px] font-bold rounded-full">ML</span></span>
-                </button>
-                                <button onclick="switchTab('weather')" class="tab-btn px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" data-tab="weather">
+                <button onclick="switchTab('weather')" class="tab-btn px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" data-tab="weather">
                     <span class="flex items-center space-x-2"><i data-lucide="cloud-rain" class="w-4 h-4"></i><span>Weather Analytics</span></span>
                 </button>
             </div>
@@ -128,6 +132,7 @@
                             <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Composite Index</span>
                             <h2 class="text-2xl font-bold text-slate-900" id="eco-status">MODERATE (STABLE)</h2>
                             <p class="text-xs text-slate-500 mt-1">Weighted metric across Atmospheric, Hydrological, Edaphic, and Acoustic domains.</p>
+                            <p class="text-[11px] text-slate-400 mt-1">Air and soil moisture are live Open-Meteo data; water, soil pH, noise and CO are simulated demo values.</p>
                         </div>
                     </div>
                     <div class="border-t md:border-t-0 md:border-l border-slate-200 pt-4 md:pt-0 md:pl-6 space-y-2">
@@ -136,7 +141,7 @@
                             <span class="font-semibold text-slate-900" id="summary-air">AQI 70 (Normal)</span>
                         </div>
                         <div class="flex justify-between text-xs text-slate-600">
-                            <span>Water Safety (25% weight):</span>
+                            <span>Water Safety <span class="data-sim">Simulated</span> (25% weight):</span>
                             <span class="font-semibold text-slate-900" id="summary-water">pH 6.9 (Normal)</span>
                         </div>
                         <div class="flex justify-between text-xs text-slate-600">
@@ -144,7 +149,7 @@
                             <span class="font-semibold text-slate-900" id="summary-soil">23.0% (Warning)</span>
                         </div>
                         <div class="flex justify-between text-xs text-slate-600">
-                            <span>Acoustic/Noise (15% weight):</span>
+                            <span>Acoustic/Noise <span class="data-sim">Simulated</span> (15% weight):</span>
                             <span class="font-semibold text-slate-900" id="summary-noise">76.4 dB (Warning)</span>
                         </div>
                     </div>
@@ -156,48 +161,45 @@
                 </div>
             </div>
 
-            <!-- Prominent ML Weather Forecast Spotlight Card -->
+            <!-- Weather Analytics Spotlight Card (figures from weather-analytics/forecast_evaluation.txt) -->
             <div class="rounded-2xl p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-xl relative overflow-hidden border border-indigo-700/60">
                 <div class="absolute -right-8 -bottom-8 w-60 h-60 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none"></div>
                 <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 relative z-10">
                     <div class="space-y-2">
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 flex items-center gap-1.5">
-                                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-300"></i> AI & Machine Learning Forecast Engine
+                                <i data-lucide="cloud-rain" class="w-3.5 h-3.5 text-indigo-300"></i> Weather Analytics
                             </span>
-                            <span class="text-xs text-indigo-300 font-medium">Autoregressive Time-Series (AR-X) Model</span>
-                            <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Vellore Active</span>
+                            <span class="text-xs text-indigo-300 font-medium">Hadoop MapReduce + seasonal harmonic regression</span>
                         </div>
-                        <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-white">3-Month Seasonal Weather, Drought & AQI Projection</h3>
+                        <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-white">Vellore weather: observed Apr–Sep, forecast Oct–Dec 2026</h3>
                         <p class="text-xs sm:text-sm text-indigo-200/90 max-w-2xl leading-relaxed">
-                            Continuous 90-day predictive trajectory trained on Vellore historical climate patterns and live sensor telemetry. Identifies post-monsoon dry-down periods, smart agricultural irrigation needs, and winter inversion AQI spikes.
+                            Monthly averages computed by Hadoop MapReduce and verified against PostgreSQL, plus a 3-month forecast learned from 10 years of Open-Meteo history, including the northeast-monsoon rain peak in October–November.
                         </p>
                     </div>
                     <div class="w-full lg:w-auto shrink-0 flex flex-col sm:flex-row lg:flex-col gap-2.5">
-                        <button onclick="switchTab('forecast'); window.scrollTo({top: 0, behavior: 'smooth'});" class="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 group">
-                            <span>View 90-Day ML Forecast</span>
+                        <button onclick="switchTab('weather'); window.scrollTo({top: 0, behavior: 'smooth'});" class="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold text-sm shadow-md transition flex items-center justify-center gap-2 group">
+                            <span>View Weather Analytics</span>
                             <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition"></i>
                         </button>
                     </div>
                 </div>
                 <div class="mt-5 pt-4 border-t border-indigo-800/40 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                     <div>
-                        <span class="text-slate-400 block text-[11px]">Model Architecture</span>
-                        <span class="font-bold text-white text-sm">Seasonal AR-X Decomposition</span>
+                        <span class="text-slate-400 block text-[11px]">Training data</span>
+                        <span class="font-bold text-white text-sm">10 years (2016–2026), Open-Meteo</span>
                     </div>
                     <div>
-                        <span class="text-slate-400 block text-[11px]">Prediction Horizon</span>
-                        <span class="font-bold text-emerald-400 text-sm">90 Days (Daily Projections)</span>
+                        <span class="text-slate-400 block text-[11px]">Back-test</span>
+                        <span class="font-bold text-emerald-400 text-sm">5 past Oct–Dec seasons</span>
                     </div>
                     <div>
-                        <span class="text-slate-400 block text-[11px]">Statistical Fit</span>
-                        <span class="font-bold text-indigo-300 text-sm">R²: 0.912 &bull; MAE: 1.18°C</span>
+                        <span class="text-slate-400 block text-[11px]">Monthly temperature error</span>
+                        <span class="font-bold text-indigo-300 text-sm">0.65 °C (old method 3.80 °C)</span>
                     </div>
                     <div>
-                        <span class="text-slate-400 block text-[11px]">Telemetry Ingestion</span>
-                        <span class="font-bold text-emerald-400 text-sm flex items-center gap-1.5">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Live Sensor Driven
-                        </span>
+                        <span class="text-slate-400 block text-[11px]">MapReduce check</span>
+                        <span class="font-bold text-emerald-400 text-sm">Matches SQL ROLLUP</span>
                     </div>
                 </div>
             </div>
@@ -207,7 +209,7 @@
                 <!-- Air Card -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-200 hover:shadow-md transition">
                     <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Air Quality</span>
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Air Quality <span class="data-live">Live</span></span>
                         <div class="w-8 h-8 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center">
                             <i data-lucide="wind" class="w-4 h-4"></i>
                         </div>
@@ -228,7 +230,7 @@
                 <!-- Water Card -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-200 hover:shadow-md transition">
                     <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Water Quality</span>
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Water Quality <span class="data-sim">Simulated</span></span>
                         <div class="w-8 h-8 rounded-lg bg-cyan-100 text-cyan-600 flex items-center justify-center">
                             <i data-lucide="droplets" class="w-4 h-4"></i>
                         </div>
@@ -249,7 +251,7 @@
                 <!-- Soil Card -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-200 hover:shadow-md transition">
                     <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Soil Vitality</span>
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Soil Vitality <span class="data-live">Live</span></span>
                         <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
                             <i data-lucide="sprout" class="w-4 h-4"></i>
                         </div>
@@ -262,7 +264,7 @@
                         <span id="badge-soil" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-100 text-amber-700">Moderate</span>
                     </div>
                     <div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-600 flex justify-between">
-                        <span>Soil pH: <strong id="card-soil-ph">6.6</strong></span>
+                        <span>Soil pH: <strong id="card-soil-ph">6.6</strong> <span class="data-sim">Simulated</span></span>
                         <button onclick="switchTab('soil')" class="text-emerald-600 hover:underline font-medium">Explore &rarr;</button>
                     </div>
                 </div>
@@ -270,7 +272,7 @@
                 <!-- Pollution Card -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-200 hover:shadow-md transition">
                     <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Pollution & Noise</span>
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Pollution & Noise <span class="data-sim">Simulated</span></span>
                         <div class="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center">
                             <i data-lucide="volume-2" class="w-4 h-4"></i>
                         </div>
@@ -330,6 +332,7 @@
                     <div>
                         <h2 class="text-xl font-bold text-slate-900">Atmospheric & Air Quality Surveillance</h2>
                         <p class="text-xs text-slate-500">Vellore Urban Corridor & Industrial Highway Buffer</p>
+                        <p class="text-[11px] text-slate-500 mt-1"><span class="data-live" style="margin-left:0">Live</span> AQI and PM2.5 from the Open-Meteo Air Quality API (CAMS model data for Vellore, updated hourly).</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
@@ -377,6 +380,7 @@
                     <div>
                         <h2 class="text-xl font-bold text-slate-900">Hydrological & Water Quality Monitoring</h2>
                         <p class="text-xs text-slate-500">Palar River Basin & Vellore Urban Aquifer Surveillance</p>
+                        <p class="text-[11px] text-slate-500 mt-1"><span class="data-sim" style="margin-left:0">Simulated</span> No public real-time water-quality feed exists for this location; pH and turbidity are generated demo values in a realistic range.</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
@@ -424,6 +428,7 @@
                     <div>
                         <h2 class="text-xl font-bold text-slate-900">Edaphic & Soil Vitality Monitoring</h2>
                         <p class="text-xs text-slate-500">Campus Green Cover & Biodiversity Ground Substratum</p>
+                        <p class="text-[11px] text-slate-500 mt-1"><span class="data-live" style="margin-left:0">Live</span> Soil moisture from the Open-Meteo forecast API. <span class="data-sim">Simulated</span> Soil pH is a generated demo value.</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
@@ -433,7 +438,7 @@
                         <p class="text-xs text-slate-600 mt-2">Drought limit: < 18% automatically signals campus smart drip irrigation.</p>
                     </div>
                     <div class="p-5 bg-slate-50 rounded-xl border border-slate-200">
-                        <div class="text-xs font-bold text-slate-700 uppercase">Soil pH Balance</div>
+                        <div class="text-xs font-bold text-slate-700 uppercase">Soil pH Balance <span class="data-sim">Simulated</span></div>
                         <div class="text-4xl font-extrabold text-slate-900 mt-2" id="soil-tab-ph">--</div>
                         <p class="text-xs text-slate-600 mt-2">Healthy arable range: 6.0 - 7.5 pH for native flora.</p>
                     </div>
@@ -471,6 +476,7 @@
                     <div>
                         <h2 class="text-xl font-bold text-slate-900">Acoustic & Industrial Emission Surveillance</h2>
                         <p class="text-xs text-slate-500">Perimeter Traffic & Local Industrial Carbon Ingestion</p>
+                        <p class="text-[11px] text-slate-500 mt-1"><span class="data-sim" style="margin-left:0">Simulated</span> No public real-time noise or CO feed exists for this location; values are generated demo data in a realistic range.</p>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
@@ -588,115 +594,6 @@
             </div>
         </section>
 
-        <!-- ================= TAB: 3-MONTH ML FORECAST ================= -->
-        <section id="tab-forecast" class="tab-content hidden space-y-6">
-            <!-- Advisory Banner -->
-            <div class="glass-card rounded-2xl p-6 border border-indigo-200 bg-gradient-to-r from-indigo-50/50 via-white to-sky-50/40">
-                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div class="flex items-start space-x-3">
-                        <div class="p-2.5 rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-200">
-                            <i data-lucide="sparkles" class="w-6 h-6"></i>
-                        </div>
-                        <div>
-                            <div class="flex items-center space-x-2">
-                                <h2 class="text-xl font-bold text-slate-900">3-Month Predictive Ecological & Weather Horizon</h2>
-                                <span class="px-2 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-800 rounded-full border border-indigo-200">AR-X Time-Series ML</span>
-                            </div>
-                            <p class="text-xs text-slate-500 mt-0.5">Trained on past 120 days historical climate telemetry & calibrated to live Vellore sensor data.</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Model Confidence: 95%
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Sustainability AI Advisory Banner -->
-                <div class="mt-5 p-4 rounded-xl bg-indigo-100/70 border border-indigo-200 text-xs text-indigo-950 flex items-start space-x-3">
-                    <i data-lucide="alert-circle" class="w-5 h-5 text-indigo-600 shrink-0 mt-0.5"></i>
-                    <div>
-                        <strong class="font-bold text-indigo-900 block mb-0.5">Automated Seasonal Sustainability Advisory:</strong>
-                        <span id="forecast-advisory">Calculating seasonal projection based on current Palar basin readings...</span>
-                    </div>
-                </div>
-
-                <!-- Quick Stat Metrics -->
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
-                    <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                        <span class="text-xs text-slate-500 block">Projected Cumulative Precipitation</span>
-                        <div class="text-2xl font-black text-sky-700 mt-1"><span id="forecast-rain">--</span> <span class="text-xs font-normal text-slate-500">mm</span></div>
-                        <span class="text-[11px] text-slate-400">Northeast Monsoon recharge</span>
-                    </div>
-                    <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                        <span class="text-xs text-slate-500 block">Critical Drought Risk Days (Soil &lt; 18%)</span>
-                        <div class="text-2xl font-black text-amber-600 mt-1"><span id="forecast-drought-days">--</span> <span class="text-xs font-normal text-slate-500">days</span></div>
-                        <span class="text-[11px] text-slate-400">Pre-triggers smart drip irrigation</span>
-                    </div>
-                    <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                        <span class="text-xs text-slate-500 block">Predicted Inversion Smog Days (AQI &gt; 150)</span>
-                        <div class="text-2xl font-black text-purple-700 mt-1"><span id="forecast-smog-days">--</span> <span class="text-xs font-normal text-slate-500">days</span></div>
-                        <span class="text-[11px] text-slate-400">Winter temperature inversion</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Monthly Cards Breakdown -->
-            <div class="space-y-3">
-                <h3 class="text-sm font-bold text-slate-900">Projected 3-Month Trajectory Breakdown</h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="forecast-monthly-cards">
-                    <div class="p-5 glass-card rounded-2xl border border-slate-200 text-center text-xs text-slate-400">Loading monthly breakdown...</div>
-                </div>
-            </div>
-
-            <!-- 90-Day Predictive Chart -->
-            <div class="glass-card rounded-2xl p-6 border border-slate-200">
-                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-slate-100">
-                    <div>
-                        <h3 class="text-lg font-bold text-slate-900">90-Day Predictive Trend Simulation</h3>
-                        <p class="text-xs text-slate-500">Estimated daily temperature & volumetric soil moisture dynamics for Vellore.</p>
-                    </div>
-                    <div class="mt-2 sm:mt-0 flex space-x-2">
-                        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">Avg Temp (°C)</span>
-                        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Soil Moisture (%)</span>
-                        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">AQI</span>
-                    </div>
-                </div>
-                <div class="mt-4 h-80">
-                    <canvas id="forecastChart"></canvas>
-                </div>
-            </div>
-
-            <!-- Model Specifications & Evaluation Scorecard -->
-            <div class="glass-card rounded-2xl p-6 border border-slate-200">
-                <h3 class="text-base font-bold text-slate-900 mb-4 flex items-center space-x-2">
-                    <i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-600"></i>
-                    <span>ML Model Architecture & Verification Scorecard</span>
-                </h3>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <span class="text-slate-400 block font-semibold uppercase">Forecasting Algorithm</span>
-                        <div class="font-bold text-slate-900 text-sm mt-1">AR-X Seasonal Decomposition</div>
-                        <p class="text-slate-500 mt-1">Multi-variable Lagged Autoregression</p>
-                    </div>
-                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <span class="text-slate-400 block font-semibold uppercase">Temperature MAE / RMSE</span>
-                        <div class="font-bold text-slate-900 text-sm mt-1">1.14°C / 1.42°C</div>
-                        <p class="text-slate-500 mt-1">Validated on 30-day test partition</p>
-                    </div>
-                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <span class="text-slate-400 block font-semibold uppercase">Soil Moisture MAE</span>
-                        <div class="font-bold text-slate-900 text-sm mt-1">2.08% Error</div>
-                        <p class="text-slate-500 mt-1">Tracks precipitation recharge</p>
-                    </div>
-                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <span class="text-slate-400 block font-semibold uppercase">Goodness-of-Fit (R²)</span>
-                        <div class="font-bold text-emerald-700 text-sm mt-1">0.89 (89% Variance)</div>
-                        <p class="text-slate-500 mt-1">High statistical confidence</p>
-                    </div>
-                </div>
-            </div>
-        </section>
                 <!-- WEATHER ANALYTICS TAB: PostgreSQL + Hadoop MapReduce + forecast -->
         <section id="tab-weather" class="tab-content hidden space-y-6">
             <div class="glass-card rounded-2xl p-6 border border-slate-200">
@@ -776,7 +673,6 @@
             if (tabId === 'pollution') loadDomainHistory('POLLUTION', 'pollution-table-body');
             if (tabId === 'alerts') loadAllAlerts();
             if (tabId === 'report') loadDailyReport();
-            if (tabId === 'forecast') loadForecastData();
             if (tabId === 'weather') loadWeatherData();
         }
 
@@ -1032,8 +928,7 @@
             }
         }
 
-        // Load 3-Month ML Forecast Data
-                // ===================== WEATHER ANALYTICS TAB =====================
+        // ===================== WEATHER ANALYTICS TAB =====================
         let weatherTempChartInstance = null;
         let weatherRainChartInstance = null;
 
@@ -1119,142 +1014,6 @@
                 console.error('Weather Analytics tab failed to load:', err);
             }
         }
-        let forecastChartInstance = null;
-        async function loadForecastData() {
-            try {
-                const res = await fetch('/api/environment/forecast/3-months');
-                if (!res.ok) return;
-                const data = await res.json();
-
-                // 1. Fill Summary Metrics
-                setEl('forecast-advisory', data.sustainabilityAdvisory || '');
-                setEl('forecast-rain', data.projectedCumulativeRainfallMm || '--');
-                setEl('forecast-drought-days', data.projectedDroughtRiskDays || 0);
-                setEl('forecast-smog-days', data.projectedSmogDays || 0);
-
-                // 2. Render 3 Monthly Overview Cards
-                const monthlyContainer = document.getElementById('forecast-monthly-cards');
-                if (monthlyContainer && data.monthlyOverview) {
-                    monthlyContainer.innerHTML = data.monthlyOverview.map((m, idx) => `
-                        <div class="glass-card rounded-2xl p-5 border border-slate-200 hover:shadow-md transition">
-                            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-                                <span class="text-xs font-bold uppercase tracking-wider text-indigo-700">Month ${idx + 1} &bull; ${m.month}</span>
-                                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${m.avgSoilMoisture < 20 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
-                                    ${m.avgSoilMoisture < 20 ? 'Dry-Down' : 'Monsoon Active'}
-                                </span>
-                            </div>
-                            <div class="mt-4 grid grid-cols-2 gap-3 text-xs">
-                                <div class="p-2.5 bg-slate-50 rounded-lg">
-                                    <span class="text-slate-400 block text-[11px]">Mean Temp</span>
-                                    <span class="text-lg font-extrabold text-slate-800">${m.avgTemp}°C</span>
-                                </div>
-                                <div class="p-2.5 bg-slate-50 rounded-lg">
-                                    <span class="text-slate-400 block text-[11px]">Avg Soil Moisture</span>
-                                    <span class="text-lg font-extrabold text-amber-700">${m.avgSoilMoisture}%</span>
-                                </div>
-                                <div class="p-2.5 bg-slate-50 rounded-lg">
-                                    <span class="text-slate-400 block text-[11px]">Precipitation</span>
-                                    <span class="text-lg font-extrabold text-sky-700">${m.totalRainfallMm} mm</span>
-                                </div>
-                                <div class="p-2.5 bg-slate-50 rounded-lg">
-                                    <span class="text-slate-400 block text-[11px]">Projected AQI</span>
-                                    <span class="text-lg font-extrabold text-purple-700">${m.avgAqi}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('');
-                }
-
-                // 3. Render 90-Day Trend Chart
-                if (data.dailyForecasts) {
-                    const labels = [];
-                    const temps = [];
-                    const soils = [];
-                    const aqis = [];
-
-                    data.dailyForecasts.forEach((d, i) => {
-                        if (i % 2 === 0 || i === data.dailyForecasts.length - 1) {
-                            labels.push(d.date.substring(5)); // MM-DD
-                            temps.push(d.avgTemp);
-                            soils.push(d.soilMoisturePct);
-                            aqis.push(d.aqi);
-                        }
-                    });
-
-                    const ctx = document.getElementById('forecastChart').getContext('2d');
-                    if (forecastChartInstance) forecastChartInstance.destroy();
-
-                    forecastChartInstance = new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: labels,
-                            datasets: [
-                                {
-                                    label: 'Avg Temperature (°C)',
-                                    data: temps,
-                                    borderColor: '#f43f5e',
-                                    backgroundColor: 'rgba(244, 63, 94, 0.08)',
-                                    yAxisID: 'yTemp',
-                                    tension: 0.35,
-                                    fill: false
-                                },
-                                {
-                                    label: 'Soil Moisture (%)',
-                                    data: soils,
-                                    borderColor: '#d97706',
-                                    backgroundColor: 'rgba(217, 119, 6, 0.08)',
-                                    yAxisID: 'ySoil',
-                                    tension: 0.35,
-                                    fill: true
-                                },
-                                {
-                                    label: 'Projected AQI',
-                                    data: aqis,
-                                    borderColor: '#9333ea',
-                                    backgroundColor: 'rgba(147, 51, 234, 0.08)',
-                                    yAxisID: 'yAqi',
-                                    borderDash: [5, 5],
-                                    tension: 0.35,
-                                    fill: false
-                                }
-                            ]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            interaction: { mode: 'index', intersect: false },
-                            plugins: { legend: { position: 'bottom' } },
-                            scales: {
-                                yTemp: {
-                                    type: 'linear',
-                                    position: 'left',
-                                    title: { display: true, text: 'Temp (°C)' },
-                                    suggestedMin: 20,
-                                    suggestedMax: 35
-                                },
-                                ySoil: {
-                                    type: 'linear',
-                                    position: 'right',
-                                    title: { display: true, text: 'Soil Moisture (%)' },
-                                    grid: { drawOnChartArea: false },
-                                    suggestedMin: 10,
-                                    suggestedMax: 50
-                                },
-                                yAqi: {
-                                    type: 'linear',
-                                    display: false,
-                                    suggestedMin: 50,
-                                    suggestedMax: 200
-                                }
-                            }
-                        }
-                    });
-                }
-                safeLucide();
-            } catch (err) {
-                console.error("Forecast load error:", err);
-            }
-        }
 
         // Trigger Live Telemetry Simulation
         async function triggerSimulation() {
@@ -1289,8 +1048,8 @@
             safeLucide();
             fetchDashboard();
             fetchChartData();
-            if (window.location.hash === '#forecast' || window.location.search.includes('tab=forecast')) {
-                switchTab('forecast');
+            if (window.location.hash === '#weather' || window.location.search.includes('tab=weather')) {
+                switchTab('weather');
             }
             // Polling every 15s to update live data on UI
             setInterval(fetchDashboard, 15000);

@@ -33,9 +33,6 @@ public class EnvironmentalDashboardController {
     @Autowired
     private IncidentAlertRepository alertRepository;
 
-    @Autowired
-    private com.econet.api.service.EnvironmentalMLForecastService mlForecastService;
-
     // 1. Full Live Dashboard (Composite Score + 4 Domains + Active Alerts)
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> getLiveDashboard() {
@@ -116,11 +113,5 @@ public class EnvironmentalDashboardController {
                 "environment", "Cloud PaaS Ready",
                 "timestamp", LocalDateTime.now()
         ));
-    }
-
-    // 10. 3-Month ML Seasonal Climate & Ecological Forecast (Next 90 Days)
-    @GetMapping("/forecast/3-months")
-    public ResponseEntity<Map<String, Object>> get90DayForecast() {
-        return ResponseEntity.ok(mlForecastService.generate90DayForecast());
     }
 }
