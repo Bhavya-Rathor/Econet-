@@ -1,95 +1,141 @@
-# Weather Analytics: Hadoop MapReduce & Machine Learning Forecasting
+# Weather Analytics: Hadoop MapReduce over EcoNet's PostgreSQL data
 
-This project fulfills the assignment requirements:
-1. **6-Month Daily Weather Dataset (`.dat` file):** Contains attributes `date, temp, rainfall, humidity, pressure, wind_speed, wind_direction`.
-2. **Hadoop MapReduce (Java):** Calculates the average temperature, rainfall, and all weather attributes across each month and over the entire 6-month period, writing results to an output file.
-3. **Seasonality-Aware Machine Learning Model:** Forecasts all weather attributes for the **next 3 months** (92 days: October, November, December) accounting for the transition from monsoon to winter.
+1. **Real 6-month daily dataset**: Vellore (EcoNet's monitoring zone), 1 Apr – 30 Sep 2026, from the
+   [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api) (ERA5 reanalysis).
+   Attributes: `date, temp, rainfall, humidity, pressure, wind_speed, wind_direction`.
+2. **Hadoop MapReduce (Java)**: monthly and overall averages of every attribute, with a Combiner and a
+   correct circular mean for wind direction.
+3. **PostgreSQL integration**: data is loaded into EcoNet's database, exported to the MapReduce job, and the
+   results are written back and cross-checked against the same aggregation in SQL.
+4. **3-month forecast** (Oct–Dec): `WeatherPredictor.java` / `ml_predict.py` (rule-based, to be replaced by a
+   model trained on the data).
+
+---
+
+## Pipeline
+
+```text
+Open-Meteo archive ──backfill──▶ PostgreSQL weather_daily
+                                        │  GET /api/weather/pipeline/export
+                                        ▼
+                               data/weather_data.dat ──▶ HDFS ──▶ MapReduce (Mapper → Combiner → Reducer)
+                                                                         │ part-r-00000
+                                        ┌────────────────────────────────┘
+                                        ▼  POST /api/weather/pipeline/import
+                         PostgreSQL weather_monthly_summary
+                                        │  GET /api/weather/pipeline/verify
+                                        ▼
+                   compared with SQL GROUP BY ROLLUP over weather_daily → all periods match
+```
+
+Run everything with one command (EcoNet backend must be running):
+```powershell
+.\run_pipeline.ps1               # MapReduce via the local simulator
+.\run_pipeline.ps1 -Mode hadoop  # MapReduce on HDFS (start-dfs.cmd first)
+```
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-WeatherAnalytics/
+weather-analytics/
 ├── data/
-│   ├── weather_data.dat            # 6-month daily weather dataset (183 records)
-│   └── generate_data.py            # Python generator for realistic dataset
+│   ├── weather_data.dat         # 183 real daily records (exported from PostgreSQL)
+│   └── fetch_open_meteo.py      # Standalone downloader (no database needed)
 ├── src/
-│   ├── WeatherJob.java             # All-in-one Hadoop MapReduce (Mapper, Reducer, Driver)
-│   ├── WeatherMapper.java          # Standalone Mapper class
-│   ├── WeatherReducer.java         # Standalone Reducer class
-│   ├── WeatherDriver.java          # Standalone Driver class
-│   ├── WeatherLocalSimulator.java  # Local Java runner (simulates MapReduce without HDFS)
-│   ├── WeatherPredictor.java       # Java ML predictor (Seasonality & Time-Series Regression)
-│   └── ml_predict.py               # Python ML predictor
-├── build/                          # Compiled .class files
-├── weather.jar                     # Packaged Hadoop JAR
-├── mapreduce_output.txt            # MapReduce output file with 6-month averages
-├── predicted_weather_next_3_months.csv  # Daily ML predictions for the next 3 months
-└── predictions_summary.txt         # Summary of ML monthly forecasts and metrics
+│   ├── WeatherMapper.java       # Emits partial sums per month + OVERALL
+│   ├── WeatherCombiner.java     # Pre-aggregates on the mapper side
+│   ├── WeatherReducer.java      # Final averages + circular mean wind direction
+│   ├── WeatherDriver.java       # Job configuration (ToolRunner)
+│   ├── WeatherAggregate.java    # Shared sum/average arithmetic
+│   ├── WeatherLocalSimulator.java  # Same logic without Hadoop
+│   ├── WeatherPredictor.java    # 3-month forecast (Java)
+│   └── ml_predict.py            # 3-month forecast (Python)
+├── mapreduce_output/
+│   ├── part-r-00000             # MapReduce output (imported into PostgreSQL)
+│   └── report.txt               # Human-readable table
+├── predicted_weather_next_3_months.csv
+├── predictions_summary.txt
+└── run_pipeline.ps1             # End-to-end pipeline script
 ```
 
 ---
 
-## 🚀 Part 1: Running the Hadoop MapReduce Program
+## 🚀 Running the MapReduce job
 
-### Option A: Local Run (No HDFS cluster needed)
-If you want to test and verify the MapReduce logic locally without starting Hadoop namenode/datanode daemons:
+### Option A: Local simulator (no Hadoop needed)
 ```powershell
-javac -d build src/WeatherLocalSimulator.java
-java -cp build WeatherLocalSimulator data/weather_data.dat mapreduce_output.txt
+javac -d build src/WeatherAggregate.java src/WeatherLocalSimulator.java
+java -cp build WeatherLocalSimulator data/weather_data.dat mapreduce_output
 ```
 
-### Option B: Running on an Apache Hadoop Cluster (HDFS)
-1. **Compile with Hadoop classpath and package JAR:**
+### Option B: Apache Hadoop (HDFS)
+1. **Compile and package** (`--release 8` keeps it compatible with Hadoop's Java 8/11 runtime):
    ```bash
-   javac -classpath $(hadoop classpath) -d build src/WeatherMapper.java src/WeatherReducer.java src/WeatherDriver.java
+   javac --release 8 -classpath "$(hadoop classpath)" -d build src/WeatherAggregate.java src/WeatherMapper.java src/WeatherCombiner.java src/WeatherReducer.java src/WeatherDriver.java
    jar -cvf weather.jar -C build/ .
    ```
-2. **Upload `.dat` file to HDFS:**
+2. **Upload the dataset to HDFS:**
    ```bash
    hdfs dfs -mkdir -p /weather_input
-   hdfs dfs -put data/weather_data.dat /weather_input/
+   hdfs dfs -put -f data/weather_data.dat /weather_input/
    ```
-3. **Run the Hadoop Job:**
+3. **Run the job:**
    ```bash
    hadoop jar weather.jar WeatherDriver /weather_input/weather_data.dat /weather_output
    ```
-4. **View MapReduce Output:**
+4. **View the output:**
    ```bash
    hdfs dfs -cat /weather_output/part-r-00000
    ```
 
----
+### Output format
+```text
+MONTH_2026-04	days=30,temp=31.64,rainfall=0.03,humidity=55.20,pressure=1008.52,wind_speed=9.68,wind_dir=144.23
+```
 
-## 📊 MapReduce Output (`mapreduce_output.txt`)
-
-Notice how the monthly breakdown captures the summer-to-monsoon fluctuations:
-
-| Group Key | Days | Avg Temp (°C) | Avg Rainfall (mm) | Avg Humidity (%) | Avg Pressure (hPa) | Avg Wind Speed (km/h) | Avg Wind Dir (deg) |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **MONTH_2026-04** | 30 | 33.05 C | 1.49 mm | 53.33% | 1010.12 hPa | 13.55 km/h | 167.85 deg |
-| **MONTH_2026-05** | 31 | 33.22 C | 1.55 mm | 51.29% | 1009.68 hPa | 15.56 km/h | 173.03 deg |
-| **MONTH_2026-06** | 30 | 28.48 C | 23.18 mm | 80.97% | 1004.33 hPa | 21.18 km/h | 222.94 deg |
-| **MONTH_2026-07** | 31 | 28.17 C | 21.13 mm | 84.71% | 1005.79 hPa | 21.14 km/h | 233.04 deg |
-| **MONTH_2026-08** | 31 | 28.64 C | 21.26 mm | 83.69% | 1005.47 hPa | 19.75 km/h | 228.42 deg |
-| **MONTH_2026-09** | 30 | 30.12 C | 5.29 mm | 69.00% | 1009.23 hPa | 15.75 km/h | 169.24 deg |
-| **OVERALL_6_MONTHS** | **183** | **30.28 C** | **12.35 mm** | **70.54%** | **1007.43 hPa** | **17.84 km/h** | **199.29 deg** |
+### Design notes
+- **Combiner**: the mapper emits sums (`count, temp, rainfall, …`) instead of raw values. Sums can be added in
+  any order, so a Combiner can merge them on each mapper node. Only one record per key per mapper is shuffled,
+  instead of one per day. (Averages could not be combined like this: an average of averages is wrong.)
+- **Circular mean for wind direction**: a plain average of 350° and 10° gives 180° (south), but both winds are
+  from the north. Each direction is turned into a unit vector `(sin θ, cos θ)`, the vectors are summed, and the
+  mean direction is `atan2(Σsin, Σcos)`.
 
 ---
 
-## 🤖 Part 2: Seasonality-Aware ML Forecasting (Next 3 Months)
+## 📊 MapReduce Output: real Vellore data (Apr–Sep 2026)
 
-The ML forecasting model explicitly takes into account the **seasonal shift into winter**:
-1. **Temperature:** drops progressively from ~28.75 °C (October) to ~23.15 °C (December).
-2. **Rainfall:** decays from 2.34 mm down to ~0.13 mm as monsoon rains conclude.
-3. **Humidity:** decreases from 64.73% to 50.15% (dry winter air).
-4. **Pressure:** rises to 1014.78 hPa (cold dense air creates winter high pressure).
-
-### 📈 ML Forecast Results (Next 3 Months: Oct, Nov, Dec):
-| Forecast Month | Days | Pred Temp (°C) | Pred Rainfall (mm) | Pred Humidity (%) | Pred Pressure (hPa) | Pred Wind Speed (km/h) | Pred Wind Dir (deg) |
+| Period | Days | Avg Temp (°C) | Avg Rainfall (mm/day) | Avg Humidity (%) | Avg Pressure (hPa) | Avg Wind Speed (km/h) | Mean Wind Dir (°) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **MONTH_2026-10** | 31 | 28.75 C | 2.34 mm | 64.73% | 1010.33 hPa | 15.34 km/h | 190.11 deg |
-| **MONTH_2026-11** | 30 | 25.91 C | 0.37 mm | 57.70% | 1012.75 hPa | 14.33 km/h | 229.90 deg |
-| **MONTH_2026-12** | 31 | 23.15 C | 0.13 mm | 50.15% | 1014.78 hPa | 12.64 km/h | 269.68 deg |
-| **OVERALL_NEXT_3_M**| **92** | **25.94 C** | **0.95 mm** | **57.52%** | **1012.62 hPa** | **14.10 km/h** | **229.90 deg** |
+| **2026-04** | 30 | 31.64 | 0.03 | 55.20 | 1008.52 | 9.68 | 144.23 |
+| **2026-05** | 31 | 30.95 | 0.99 | 59.39 | 1006.55 | 9.86 | 215.96 |
+| **2026-06** | 30 | 30.33 | 2.36 | 60.30 | 1006.94 | 12.67 | 268.14 |
+| **2026-07** | 31 | 30.94 | 1.54 | 54.00 | 1006.18 | 14.47 | 268.53 |
+| **2026-08** | 31 | 29.54 | 4.09 | 63.65 | 1007.39 | 12.86 | 271.97 |
+| **2026-09** | 30 | 29.13 | 4.31 | 68.27 | 1009.16 | 9.59 | 256.69 |
+| **OVERALL** | **183** | **30.42** | **2.22** | **60.11** | **1007.44** | **11.54** | **252.92** |
+
+What the data shows: April is hot and almost dry. Winds swing from south-easterly in April to steady
+westerlies (~270°) from June with the southwest monsoon. Rainfall builds through August–September, ahead of
+the northeast monsoon (Oct–Dec), which is a major rain season for interior Tamil Nadu.
+
+These numbers match the SQL `GROUP BY ROLLUP` over `weather_daily` exactly (checked by
+`GET /api/weather/pipeline/verify`) and an independent Python calculation.
+
+---
+
+## 🤖 3-Month Forecast (Oct–Dec 2026)
+
+`WeatherPredictor.java` and `ml_predict.py` start from the September average and apply fixed seasonal trends:
+
+| Month | Days | Pred Temp (°C) | Pred Rainfall (mm) | Pred Humidity (%) | Pred Pressure (hPa) | Pred Wind Speed (km/h) | Pred Wind Dir (°) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **2026-10** | 31 | 27.76 | 1.91 | 64.00 | 1010.26 | 9.18 | 272.64 |
+| **2026-11** | 30 | 24.91 | 0.30 | 56.96 | 1012.68 | 8.18 | 312.42 |
+| **2026-12** | 31 | 22.16 | 0.12 | 49.42 | 1014.71 | 6.50 | 236.07 |
+
+> ⚠️ **Known limitation:** the trends are hard-coded, not learned from data. They assume rain stops after
+> September, but October–December is the northeast monsoon season in Vellore. This forecast is due to be
+> replaced by a model trained on multi-year Open-Meteo history and stored in the `weather_forecast` table.

@@ -131,3 +131,92 @@ EXECUTE FUNCTION trg_fn_auto_alert();
 -- GROUP BY hour_window
 -- HAVING AVG(reading_value) > 100
 -- ORDER BY hourly_aqi DESC;
+
+-- =========================================================================
+-- WEATHER ANALYTICS MODULE (PostgreSQL <-> Hadoop MapReduce pipeline)
+-- Flow: Open-Meteo archive -> weather_daily -> export .dat -> Hadoop MapReduce
+--       -> part-r-00000 -> weather_monthly_summary -> SQL ROLLUP cross-check
+-- =========================================================================
+
+-- 5. Daily observed weather (real data from the Open-Meteo historical archive)
+CREATE TABLE IF NOT EXISTS weather_daily (
+    id BIGSERIAL PRIMARY KEY,
+    zone_id BIGINT NOT NULL REFERENCES monitoring_zones(id) ON DELETE CASCADE,
+    obs_date DATE NOT NULL,
+    temp_mean DOUBLE PRECISION NOT NULL,            -- deg C
+    rainfall_mm DOUBLE PRECISION NOT NULL CHECK (rainfall_mm >= 0),
+    humidity_pct DOUBLE PRECISION NOT NULL CHECK (humidity_pct BETWEEN 0 AND 100),
+    pressure_hpa DOUBLE PRECISION NOT NULL,         -- mean sea level
+    wind_speed_kmh DOUBLE PRECISION NOT NULL CHECK (wind_speed_kmh >= 0),
+    wind_dir_deg DOUBLE PRECISION NOT NULL CHECK (wind_dir_deg >= 0 AND wind_dir_deg <= 360),
+    source VARCHAR(30) NOT NULL DEFAULT 'OPEN_METEO_ARCHIVE',
+    ingested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_weather_daily_zone_date UNIQUE (zone_id, obs_date)
+);
+CREATE INDEX IF NOT EXISTS idx_weather_daily_date ON weather_daily(obs_date);
+
+-- 6. Per-month (and OVERALL) averages written back from the Hadoop MapReduce output
+CREATE TABLE IF NOT EXISTS weather_monthly_summary (
+    id BIGSERIAL PRIMARY KEY,
+    zone_id BIGINT NOT NULL REFERENCES monitoring_zones(id) ON DELETE CASCADE,
+    period_key VARCHAR(20) NOT NULL,                -- '2026-04' ... or 'OVERALL'
+    days INTEGER NOT NULL CHECK (days > 0),
+    avg_temp DOUBLE PRECISION NOT NULL,
+    avg_rainfall DOUBLE PRECISION NOT NULL,
+    avg_humidity DOUBLE PRECISION NOT NULL,
+    avg_pressure DOUBLE PRECISION NOT NULL,
+    avg_wind_speed DOUBLE PRECISION NOT NULL,
+    mean_wind_dir DOUBLE PRECISION NOT NULL,        -- circular mean
+    computed_by VARCHAR(30) NOT NULL DEFAULT 'HADOOP_MAPREDUCE',
+    computed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_weather_summary_zone_period_src UNIQUE (zone_id, period_key, computed_by)
+);
+
+-- 7. Daily forecasts (several models can be stored side by side)
+CREATE TABLE IF NOT EXISTS weather_forecast (
+    id BIGSERIAL PRIMARY KEY,
+    zone_id BIGINT NOT NULL REFERENCES monitoring_zones(id) ON DELETE CASCADE,
+    forecast_date DATE NOT NULL,
+    pred_temp DOUBLE PRECISION NOT NULL,
+    pred_rainfall DOUBLE PRECISION NOT NULL,
+    pred_humidity DOUBLE PRECISION NOT NULL,
+    pred_pressure DOUBLE PRECISION NOT NULL,
+    pred_wind_speed DOUBLE PRECISION NOT NULL,
+    pred_wind_dir DOUBLE PRECISION NOT NULL,
+    model_name VARCHAR(50) NOT NULL,
+    generated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_weather_forecast_zone_date_model UNIQUE (zone_id, forecast_date, model_name)
+);
+
+-- DBMS VIEW: the MapReduce aggregation expressed in SQL.
+-- ROLLUP adds the grand-total row; wind direction uses a circular mean (sum of sin/cos).
+CREATE OR REPLACE VIEW v_weather_monthly_sql AS
+SELECT zone_id,
+       COALESCE(TO_CHAR(obs_date, 'YYYY-MM'), 'OVERALL') AS period_key,
+       COUNT(*) AS days,
+       ROUND(AVG(temp_mean)::NUMERIC, 2) AS avg_temp,
+       ROUND(AVG(rainfall_mm)::NUMERIC, 2) AS avg_rainfall,
+       ROUND(AVG(humidity_pct)::NUMERIC, 2) AS avg_humidity,
+       ROUND(AVG(pressure_hpa)::NUMERIC, 2) AS avg_pressure,
+       ROUND(AVG(wind_speed_kmh)::NUMERIC, 2) AS avg_wind_speed,
+       ROUND(MOD((DEGREES(ATAN2(SUM(SIN(RADIANS(wind_dir_deg))), SUM(COS(RADIANS(wind_dir_deg))))) + 360)::NUMERIC, 360), 2) AS mean_wind_dir
+FROM weather_daily
+GROUP BY zone_id, ROLLUP (TO_CHAR(obs_date, 'YYYY-MM'));
+
+-- Query 3: Side-by-side Hadoop vs SQL results (JOIN on period) - differences should be ~0
+-- SELECT h.period_key, h.avg_temp AS hadoop_temp, s.avg_temp AS sql_temp,
+--        ABS(h.avg_temp - s.avg_temp) AS temp_diff,
+--        h.mean_wind_dir AS hadoop_wind_dir, s.mean_wind_dir AS sql_wind_dir
+-- FROM weather_monthly_summary h
+-- JOIN v_weather_monthly_sql s ON s.zone_id = h.zone_id AND s.period_key = h.period_key
+-- WHERE h.computed_by = 'HADOOP_MAPREDUCE'
+-- ORDER BY h.period_key;
+
+-- Query 4: Wettest days per month using a window function
+-- SELECT * FROM (
+--     SELECT obs_date, rainfall_mm,
+--            RANK() OVER (PARTITION BY DATE_TRUNC('month', obs_date) ORDER BY rainfall_mm DESC) AS rank_in_month
+--     FROM weather_daily
+-- ) t
+-- WHERE rank_in_month <= 3 AND rainfall_mm > 0
+-- ORDER BY obs_date;

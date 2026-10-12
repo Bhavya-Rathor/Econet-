@@ -1,39 +1,36 @@
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.util.*;
 
 /**
  * WeatherLocalSimulator:
- * Runs the MapReduce logic locally without needing a Hadoop cluster or HDFS daemons.
+ * Runs the MapReduce logic locally without needing a Hadoop installation.
  * It simulates:
  * 1. Read input (.dat file)
- * 2. Mapper phase: emit (Key, Value)
+ * 2. Mapper phase: emit (Key, partial sums)
  * 3. Shuffle & Sort phase: group values by Key
- * 4. Reducer phase: compute averages and write to output file
+ * 4. Reducer phase: add up sums, compute averages
+ *
+ * Writes the same files a real Hadoop run produces in the output directory:
+ *   <outputDir>/part-r-00000   (machine-readable, imported into PostgreSQL by EcoNet)
+ *   <outputDir>/report.txt     (human-readable table)
  */
 public class WeatherLocalSimulator {
 
     public static void main(String[] args) {
-        String inputFile = "data/weather_data.dat";
-        String outputFile = "mapreduce_output.txt";
-
-        if (args.length >= 1) {
-            inputFile = args[0];
-        }
-        if (args.length >= 2) {
-            outputFile = args[1];
-        }
+        String inputFile = args.length >= 1 ? args[0] : "data/weather_data.dat";
+        String outputDir = args.length >= 2 ? args[1] : "mapreduce_output";
 
         System.out.println("==================================================================");
         System.out.println("  Weather Analytics - Local MapReduce Execution Engine");
         System.out.println("==================================================================");
         System.out.println("Reading input dataset: " + inputFile);
 
-        // Map phase storage: Key -> List of Values
-        Map<String, List<double[]>> intermediateData = new TreeMap<>();
-
+        // Map + Shuffle phase storage: Key -> running partial sums
+        Map<String, double[]> grouped = new TreeMap<>();
         int totalInputRecords = 0;
 
         // 1. MAPPER SIMULATION
@@ -52,22 +49,21 @@ public class WeatherLocalSimulator {
 
                 try {
                     String date = tokens[0].trim();
-                    double temp = Double.parseDouble(tokens[1].trim());
-                    double rainfall = Double.parseDouble(tokens[2].trim());
-                    double humidity = Double.parseDouble(tokens[3].trim());
-                    double pressure = Double.parseDouble(tokens[4].trim());
-                    double windSpeed = Double.parseDouble(tokens[5].trim());
-                    double windDir = Double.parseDouble(tokens[6].trim());
-
-                    double[] attributes = new double[]{temp, rainfall, humidity, pressure, windSpeed, windDir};
+                    double windRad = Math.toRadians(Double.parseDouble(tokens[6].trim()));
+                    double[] sums = new double[]{
+                            1,
+                            Double.parseDouble(tokens[1].trim()),
+                            Double.parseDouble(tokens[2].trim()),
+                            Double.parseDouble(tokens[3].trim()),
+                            Double.parseDouble(tokens[4].trim()),
+                            Double.parseDouble(tokens[5].trim()),
+                            Math.sin(windRad),
+                            Math.cos(windRad)
+                    };
                     totalInputRecords++;
 
-                    // Emit by Month
-                    String monthKey = "MONTH_" + date.substring(0, 7);
-                    intermediateData.computeIfAbsent(monthKey, k -> new ArrayList<>()).add(attributes);
-
-                    // Emit Overall
-                    intermediateData.computeIfAbsent("OVERALL_6_MONTHS", k -> new ArrayList<>()).add(attributes);
+                    WeatherAggregate.addInto(grouped.computeIfAbsent("MONTH_" + date.substring(0, 7), k -> new double[WeatherAggregate.FIELDS]), sums);
+                    WeatherAggregate.addInto(grouped.computeIfAbsent("OVERALL", k -> new double[WeatherAggregate.FIELDS]), sums);
 
                 } catch (NumberFormatException ex) {
                     // Skip malformed records
@@ -80,59 +76,41 @@ public class WeatherLocalSimulator {
         }
 
         System.out.println("Mapper Phase completed: Processed " + totalInputRecords + " daily records.");
-        System.out.println("Shuffle & Sort Phase: Grouped into " + intermediateData.size() + " distinct keys.");
-        System.out.println("Reducer Phase: Computing averages and writing to: " + outputFile);
+        System.out.println("Shuffle & Sort Phase: Grouped into " + grouped.size() + " distinct keys.");
+        System.out.println("Reducer Phase: Computing averages and writing to: " + outputDir);
 
         // 2. REDUCER SIMULATION & OUTPUT
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile))) {
-            writer.write("========================================================================================================================\n");
-            writer.write("HADOOP MAPREDUCE OUTPUT: 6-MONTH WEATHER ATTRIBUTE AVERAGES\n");
-            writer.write("========================================================================================================================\n");
-            writer.write(String.format("%-18s | %-6s | %-12s | %-16s | %-14s | %-14s | %-16s | %-16s\n",
-                    "GROUP KEY", "DAYS", "AVG TEMP", "AVG RAINFALL", "AVG HUMIDITY", "AVG PRESSURE", "AVG WIND SPEED", "AVG WIND DIR"));
-            writer.write("------------------------------------------------------------------------------------------------------------------------\n");
+        new File(outputDir).mkdirs();
+        try (BufferedWriter part = new BufferedWriter(new FileWriter(new File(outputDir, "part-r-00000")));
+             BufferedWriter report = new BufferedWriter(new FileWriter(new File(outputDir, "report.txt")))) {
 
-            for (Map.Entry<String, List<double[]>> entry : intermediateData.entrySet()) {
+            report.write("========================================================================================================================\n");
+            report.write("HADOOP MAPREDUCE OUTPUT: WEATHER ATTRIBUTE AVERAGES (VELLORE, OPEN-METEO DATA)\n");
+            report.write("========================================================================================================================\n");
+            report.write(String.format("%-18s | %-6s | %-12s | %-16s | %-14s | %-14s | %-16s | %-16s\n",
+                    "GROUP KEY", "DAYS", "AVG TEMP", "AVG RAINFALL", "AVG HUMIDITY", "AVG PRESSURE", "AVG WIND SPEED", "MEAN WIND DIR"));
+            report.write("------------------------------------------------------------------------------------------------------------------------\n");
+
+            for (Map.Entry<String, double[]> entry : grouped.entrySet()) {
                 String key = entry.getKey();
-                List<double[]> list = entry.getValue();
+                double[] s = entry.getValue();
+                double n = s[0];
 
-                int count = list.size();
-                double sumTemp = 0.0;
-                double sumRainfall = 0.0;
-                double sumHumidity = 0.0;
-                double sumPressure = 0.0;
-                double sumWindSpeed = 0.0;
-                double sumWindDir = 0.0;
+                part.write(key + "\t" + WeatherAggregate.toAverages(s) + "\n");
 
-                for (double[] d : list) {
-                    sumTemp += d[0];
-                    sumRainfall += d[1];
-                    sumHumidity += d[2];
-                    sumPressure += d[3];
-                    sumWindSpeed += d[4];
-                    sumWindDir += d[5];
-                }
-
-                double avgTemp = sumTemp / count;
-                double avgRainfall = sumRainfall / count;
-                double avgHumidity = sumHumidity / count;
-                double avgPressure = sumPressure / count;
-                double avgWindSpeed = sumWindSpeed / count;
-                double avgWindDir = sumWindDir / count;
-
-                String row = String.format("%-18s | %-6d | %-10.2f C | %-13.2f mm | %-13.2f%% | %-10.2f hPa | %-12.2f km/h | %-12.2f deg\n",
-                        key, count, avgTemp, avgRainfall, avgHumidity, avgPressure, avgWindSpeed, avgWindDir);
-
-                writer.write(row);
+                String row = String.format(Locale.ROOT, "%-18s | %-6d | %-10.2f C | %-13.2f mm | %-13.2f%% | %-10.2f hPa | %-12.2f km/h | %-12.2f deg\n",
+                        key, (long) n, s[1] / n, s[2] / n, s[3] / n, s[4] / n, s[5] / n,
+                        WeatherAggregate.meanWindDirection(s[6], s[7]));
+                report.write(row);
                 System.out.print(row);
             }
-            writer.write("========================================================================================================================\n");
+            report.write("========================================================================================================================\n");
         } catch (Exception e) {
-            System.err.println("Error writing output file: " + e.getMessage());
+            System.err.println("Error writing output: " + e.getMessage());
             e.printStackTrace();
             return;
         }
 
-        System.out.println("\nSuccessfully generated MapReduce output file: " + outputFile);
+        System.out.println("\nSuccessfully generated MapReduce output in: " + outputDir);
     }
 }

@@ -1,0 +1,7 @@
+MONTH_2026-04	days=30,temp=31.64,rainfall=0.03,humidity=55.20,pressure=1008.52,wind_speed=9.68,wind_dir=144.23
+MONTH_2026-05	days=31,temp=30.95,rainfall=0.99,humidity=59.39,pressure=1006.55,wind_speed=9.86,wind_dir=215.96
+MONTH_2026-06	days=30,temp=30.33,rainfall=2.36,humidity=60.30,pressure=1006.94,wind_speed=12.67,wind_dir=268.14
+MONTH_2026-07	days=31,temp=30.94,rainfall=1.54,humidity=54.00,pressure=1006.18,wind_speed=14.47,wind_dir=268.53
+MONTH_2026-08	days=31,temp=29.54,rainfall=4.09,humidity=63.65,pressure=1007.39,wind_speed=12.86,wind_dir=271.97
+MONTH_2026-09	days=30,temp=29.13,rainfall=4.31,humidity=68.27,pressure=1009.16,wind_speed=9.59,wind_dir=256.69
+OVERALL	days=183,temp=30.42,rainfall=2.22,humidity=60.11,pressure=1007.44,wind_speed=11.54,wind_dir=252.92
