@@ -9,6 +9,8 @@ import com.econet.api.repository.IncidentAlertRepository;
 import com.econet.api.repository.MonitoringZoneRepository;
 import com.econet.api.repository.ThresholdRuleRepository;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,8 @@ import java.util.*;
 
 @Service
 public class EnvironmentalTelemetryService {
+
+    private static final Logger logger = LoggerFactory.getLogger(EnvironmentalTelemetryService.class);
 
     @Autowired
     private MonitoringZoneRepository zoneRepository;
@@ -101,25 +105,7 @@ public class EnvironmentalTelemetryService {
         MonitoringZone zone = zoneRepository.findById(zoneId != null ? zoneId : getDefaultZone().getId())
                 .orElse(getDefaultZone());
 
-        String status = "NORMAL";
-        Optional<ThresholdRule> ruleOpt = ruleRepository.findByParameterName(parameterName);
-
-        if (ruleOpt.isPresent()) {
-            ThresholdRule rule = ruleOpt.get();
-            boolean isCritical = rule.isLowerIsCritical() ? value <= rule.getCriticalLimit() : value >= rule.getCriticalLimit();
-            boolean isWarning = rule.isLowerIsCritical() ? value <= rule.getWarningLimit() : value >= rule.getWarningLimit();
-
-            if (isCritical) {
-                status = "CRITICAL";
-                // Productive Event-Driven Cloud Action: Auto-create Incident Alert
-                IncidentAlert alert = new IncidentAlert(
-                        zone, domain, parameterName, value, unit, "CRITICAL", rule.getActionProtocol()
-                );
-                alertRepository.save(alert);
-            } else if (isWarning) {
-                status = "WARNING";
-            }
-        }
+        String status = evaluateAgainstRule(zone, domain, parameterName, value, unit, true);
 
         EnvironmentalReading reading = new EnvironmentalReading(
                 zone, domain, parameterName, value, unit, status, timestamp != null ? timestamp : LocalDateTime.now()
@@ -137,22 +123,32 @@ public class EnvironmentalTelemetryService {
     private List<EnvironmentalReading> generateSampleReadingsForTime(MonitoringZone zone, LocalDateTime timestamp, boolean checkAlerts) {
         List<EnvironmentalReading> batch = new ArrayList<>();
 
-        // Baseline defaults calibrated to Vellore
-        double aqi = 75.0 + random.nextInt(40);
-        double pm25 = 22.0 + random.nextDouble() * 25.0;
-        double soilMoisture = 23.0 + random.nextDouble() * 12.0;
+        // Seed (history) cycles use baseline values calibrated to Vellore
+        Map<String, Double> values = new HashMap<>();
+        values.put("AQI", 75.0 + random.nextInt(40));
+        values.put("PM2_5", 22.0 + random.nextDouble() * 25.0);
+        values.put("SOIL_MOISTURE", 23.0 + random.nextDouble() * 12.0);
 
-        // For live telemetry cycles, fetch real live Vellore readings from Open-Meteo
+        // Live cycles use ONLY real Open-Meteo values. If a request fails, that parameter is skipped
+        // for this cycle rather than replaced by a made-up number, so fake values never reach the
+        // database or open/close incident alerts.
         if (checkAlerts) {
             Map<String, Double> realData = fetchLiveVelloreSensors();
-            if (realData.containsKey("AQI")) aqi = realData.get("AQI");
-            if (realData.containsKey("PM2_5")) pm25 = realData.get("PM2_5");
-            if (realData.containsKey("SOIL_MOISTURE")) soilMoisture = realData.get("SOIL_MOISTURE");
+            for (String param : List.of("AQI", "PM2_5", "SOIL_MOISTURE")) {
+                if (!realData.containsKey(param)) {
+                    logger.warn("[TELEMETRY] Open-Meteo value for {} unavailable this cycle; skipping it", param);
+                }
+            }
+            values = realData;
         }
 
         // 1. AIR DOMAIN (Real live for Vellore)
-        batch.add(createReadingOrAlert(zone, "AIR", "AQI", Math.round(aqi * 10.0) / 10.0, "AQI", timestamp, checkAlerts));
-        batch.add(createReadingOrAlert(zone, "AIR", "PM2_5", Math.round(pm25 * 10.0) / 10.0, "ug/m3", timestamp, checkAlerts));
+        if (values.containsKey("AQI")) {
+            batch.add(createReadingOrAlert(zone, "AIR", "AQI", Math.round(values.get("AQI") * 10.0) / 10.0, "AQI", timestamp, checkAlerts));
+        }
+        if (values.containsKey("PM2_5")) {
+            batch.add(createReadingOrAlert(zone, "AIR", "PM2_5", Math.round(values.get("PM2_5") * 10.0) / 10.0, "ug/m3", timestamp, checkAlerts));
+        }
 
         // 2. WATER DOMAIN (In-situ Palar River Basin)
         double waterPh = 6.9 + (random.nextDouble() * 0.6 - 0.3); // 6.6 - 7.2
@@ -162,7 +158,9 @@ public class EnvironmentalTelemetryService {
 
         // 3. SOIL DOMAIN (Real live volumetric ground moisture for Vellore)
         double soilPh = 6.5 + random.nextDouble() * 0.5; // 6.5 - 7.0
-        batch.add(createReadingOrAlert(zone, "SOIL", "SOIL_MOISTURE", Math.round(soilMoisture * 10.0) / 10.0, "%", timestamp, checkAlerts));
+        if (values.containsKey("SOIL_MOISTURE")) {
+            batch.add(createReadingOrAlert(zone, "SOIL", "SOIL_MOISTURE", Math.round(values.get("SOIL_MOISTURE") * 10.0) / 10.0, "%", timestamp, checkAlerts));
+        }
         batch.add(createReadingOrAlert(zone, "SOIL", "SOIL_PH", Math.round(soilPh * 10.0) / 10.0, "pH", timestamp, checkAlerts));
 
         // 4. POLLUTION / NOISE DOMAIN (Katpadi corridor acoustic monitoring)
@@ -178,14 +176,14 @@ public class EnvironmentalTelemetryService {
         Map<String, Double> data = new HashMap<>();
         try {
             java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                    .connectTimeout(java.time.Duration.ofSeconds(3))
+                    .connectTimeout(java.time.Duration.ofSeconds(5))
                     .build();
 
             // 1. Live Air Quality for Vellore (lat: 12.9165, lon: 79.1325)
             String airUrl = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=12.9165&longitude=79.1325&current=pm10,pm2_5,us_aqi";
             var airReq = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create(airUrl))
-                    .timeout(java.time.Duration.ofSeconds(4))
+                    .timeout(java.time.Duration.ofSeconds(10))
                     .GET()
                     .build();
             var airRes = client.send(airReq, java.net.http.HttpResponse.BodyHandlers.ofString());
@@ -201,7 +199,7 @@ public class EnvironmentalTelemetryService {
             String soilUrl = "https://api.open-meteo.com/v1/forecast?latitude=12.9165&longitude=79.1325&current=soil_moisture_0_to_1cm";
             var soilReq = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create(soilUrl))
-                    .timeout(java.time.Duration.ofSeconds(4))
+                    .timeout(java.time.Duration.ofSeconds(10))
                     .GET()
                     .build();
             var soilRes = client.send(soilReq, java.net.http.HttpResponse.BodyHandlers.ofString());
@@ -220,27 +218,54 @@ public class EnvironmentalTelemetryService {
     }
 
     private EnvironmentalReading createReadingOrAlert(MonitoringZone zone, String domain, String parameterName, Double value, String unit, LocalDateTime timestamp, boolean triggerAlert) {
-        String status = "NORMAL";
+        String status = evaluateAgainstRule(zone, domain, parameterName, value, unit, triggerAlert);
+        return new EnvironmentalReading(zone, domain, parameterName, value, unit, status, timestamp);
+    }
+
+    /**
+     * Classifies a reading as NORMAL / WARNING / CRITICAL and, when manageAlerts is true,
+     * keeps at most ONE open incident per zone + parameter:
+     *  - CRITICAL and no open alert  -> open a new alert
+     *  - CRITICAL and an open alert  -> keep it, recording the worst value seen
+     *  - back to NORMAL              -> auto-resolve the open alert
+     * WARNING leaves an open alert untouched, so a value hovering around the
+     * critical limit does not open and close alerts repeatedly.
+     */
+    private String evaluateAgainstRule(MonitoringZone zone, String domain, String parameterName, Double value, String unit, boolean manageAlerts) {
         Optional<ThresholdRule> ruleOpt = ruleRepository.findByParameterName(parameterName);
-
-        if (ruleOpt.isPresent()) {
-            ThresholdRule rule = ruleOpt.get();
-            boolean isCritical = rule.isLowerIsCritical() ? value <= rule.getCriticalLimit() : value >= rule.getCriticalLimit();
-            boolean isWarning = rule.isLowerIsCritical() ? value <= rule.getWarningLimit() : value >= rule.getWarningLimit();
-
-            if (isCritical) {
-                status = "CRITICAL";
-                if (triggerAlert) {
-                    IncidentAlert alert = new IncidentAlert(
-                            zone, domain, parameterName, value, unit, "CRITICAL", rule.getActionProtocol()
-                    );
-                    alertRepository.save(alert);
-                }
-            } else if (isWarning) {
-                status = "WARNING";
-            }
+        if (ruleOpt.isEmpty()) {
+            return "NORMAL";
         }
 
-        return new EnvironmentalReading(zone, domain, parameterName, value, unit, status, timestamp);
+        ThresholdRule rule = ruleOpt.get();
+        boolean lowerIsWorse = rule.isLowerIsCritical();
+        boolean isCritical = lowerIsWorse ? value <= rule.getCriticalLimit() : value >= rule.getCriticalLimit();
+        boolean isWarning = lowerIsWorse ? value <= rule.getWarningLimit() : value >= rule.getWarningLimit();
+        String status = isCritical ? "CRITICAL" : isWarning ? "WARNING" : "NORMAL";
+
+        if (manageAlerts) {
+            Optional<IncidentAlert> open = alertRepository
+                    .findFirstByZoneIdAndParameterNameAndResolvedFalseOrderByTriggeredAtAsc(zone.getId(), parameterName);
+
+            if (isCritical) {
+                if (open.isEmpty()) {
+                    // Event-driven cloud action: open an incident for this breach
+                    alertRepository.save(new IncidentAlert(zone, domain, parameterName, value, unit, "CRITICAL", rule.getActionProtocol()));
+                } else {
+                    IncidentAlert alert = open.get();
+                    boolean worse = lowerIsWorse ? value < alert.getBreachValue() : value > alert.getBreachValue();
+                    if (worse) {
+                        alert.setBreachValue(value);
+                        alertRepository.save(alert);
+                    }
+                }
+            } else if (!isWarning && open.isPresent()) {
+                IncidentAlert alert = open.get();
+                alert.setResolved(true);
+                alert.setResolvedAt(LocalDateTime.now());
+                alertRepository.save(alert);
+            }
+        }
+        return status;
     }
 }

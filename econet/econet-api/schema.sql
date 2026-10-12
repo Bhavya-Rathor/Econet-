@@ -58,6 +58,12 @@ CREATE TABLE IF NOT EXISTS incident_alerts (
     resolved_at TIMESTAMP
 );
 
+-- Partial unique index: at most ONE unresolved alert per zone + parameter.
+-- Resolved alerts are not indexed, so history can hold any number of past incidents.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_one_open_alert_per_parameter
+    ON incident_alerts (zone_id, parameter_name)
+    WHERE resolved = FALSE;
+
 -- =========================================================================
 -- ADVANCED DBMS FEATURES (For Faculty Viva & Practical Demonstration)
 -- =========================================================================
@@ -95,8 +101,12 @@ BEGIN
 
         IF is_breach THEN
             NEW.status := 'CRITICAL';
-            INSERT INTO incident_alerts (zone_id, domain, parameter_name, breach_value, unit, severity, advisory_action, triggered_at, resolved)
-            VALUES (NEW.zone_id, NEW.domain, NEW.parameter_name, NEW.reading_value, NEW.unit, 'CRITICAL', rule_record.action_protocol, NEW.recorded_at, FALSE);
+            -- One open incident per zone + parameter: skip if this breach is already being tracked
+            IF NOT EXISTS (SELECT 1 FROM incident_alerts
+                           WHERE zone_id = NEW.zone_id AND parameter_name = NEW.parameter_name AND resolved = FALSE) THEN
+                INSERT INTO incident_alerts (zone_id, domain, parameter_name, breach_value, unit, severity, advisory_action, triggered_at, resolved)
+                VALUES (NEW.zone_id, NEW.domain, NEW.parameter_name, NEW.reading_value, NEW.unit, 'CRITICAL', rule_record.action_protocol, NEW.recorded_at, FALSE);
+            END IF;
         END IF;
     END IF;
     RETURN NEW;
