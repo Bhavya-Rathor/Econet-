@@ -69,17 +69,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_one_open_alert_per_parameter
 -- =========================================================================
 
 -- DBMS VIEW: Real-time Live Zone Health Summary
+-- Correlated subqueries (not two LEFT JOINs): joining readings AND alerts to the zone at once
+-- pairs every reading with every alert, so COUNT would multiply (join fan-out).
 CREATE OR REPLACE VIEW v_live_zone_health AS
-SELECT 
+SELECT
     z.id AS zone_id,
     z.name AS zone_name,
     z.zone_type,
-    COUNT(a.id) FILTER (WHERE a.resolved = FALSE) AS active_alerts_count,
-    MAX(r.recorded_at) AS last_telemetry_time
-FROM monitoring_zones z
-LEFT JOIN environmental_readings r ON z.id = r.zone_id
-LEFT JOIN incident_alerts a ON z.id = a.zone_id
-GROUP BY z.id, z.name, z.zone_type;
+    (SELECT COUNT(*) FROM incident_alerts a
+      WHERE a.zone_id = z.id AND a.resolved = FALSE) AS active_alerts_count,
+    (SELECT MAX(r.recorded_at) FROM environmental_readings r
+      WHERE r.zone_id = z.id) AS last_telemetry_time
+FROM monitoring_zones z;
 
 -- DBMS TRIGGER: Auto-trigger incident alerts if raw SQL inserts violate critical thresholds
 CREATE OR REPLACE FUNCTION trg_fn_auto_alert()
