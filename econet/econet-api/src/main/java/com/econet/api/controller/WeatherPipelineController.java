@@ -22,6 +22,7 @@ public class WeatherPipelineController {
 
     private static final String DEFAULT_START = "2026-04-01";
     private static final String DEFAULT_END = "2026-09-30";
+    private static final String DEFAULT_MODEL = "SEASONAL_HARMONIC_V1";
 
     @Autowired
     private WeatherPipelineService pipelineService;
@@ -57,6 +58,25 @@ public class WeatherPipelineController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(new ApiResponse(false, "Import failed: " + e.getMessage(), null));
         }
+    }
+
+    // 5. Upload a forecast CSV (from train_forecast.py) into weather_forecast
+    @PostMapping(value = "/forecast/import", consumes = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<ApiResponse> importForecast(
+            @RequestParam(defaultValue = DEFAULT_MODEL) String model,
+            @RequestBody String csv) {
+        try {
+            int saved = pipelineService.importForecastCsv(csv, model);
+            return ResponseEntity.ok(new ApiResponse(true, "Imported " + saved + " forecast days for " + model, null));
+        } catch (IllegalArgumentException | java.time.format.DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(new ApiResponse(false, "Forecast import failed: " + e.getMessage(), null));
+        }
+    }
+
+    // Stored forecast
+    @GetMapping("/forecast")
+    public ResponseEntity<ApiResponse> forecast(@RequestParam(defaultValue = DEFAULT_MODEL) String model) {
+        return ResponseEntity.ok(new ApiResponse(true, "Forecast for " + model, pipelineService.getForecast(model)));
     }
 
     // Stored Hadoop results

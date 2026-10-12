@@ -2,8 +2,10 @@ package com.econet.api.service;
 
 import com.econet.api.model.MonitoringZone;
 import com.econet.api.model.WeatherDaily;
+import com.econet.api.model.WeatherForecast;
 import com.econet.api.model.WeatherMonthlySummary;
 import com.econet.api.repository.WeatherDailyRepository;
+import com.econet.api.repository.WeatherForecastRepository;
 import com.econet.api.repository.WeatherMonthlySummaryRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,6 +47,9 @@ public class WeatherPipelineService {
 
     @Autowired
     private WeatherMonthlySummaryRepository summaryRepository;
+
+    @Autowired
+    private WeatherForecastRepository forecastRepository;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -186,6 +191,81 @@ public class WeatherPipelineService {
 
         logger.info("[WEATHER PIPELINE] Imported {} MapReduce summary rows", saved.size());
         return saved;
+    }
+
+    // ------------------------------------------------------------------
+    // 5. FORECAST: train_forecast.py CSV -> weather_forecast
+    //    Header: date,temp,rainfall,humidity,pressure,wind_speed,wind_direction
+    // ------------------------------------------------------------------
+    @Transactional
+    public int importForecastCsv(String csv, String modelName) {
+        MonitoringZone zone = telemetryService.getDefaultZone();
+        String[] lines = csv.split("\\R");
+        if (lines.length < 2 || !lines[0].trim().equals(DAT_HEADER)) {
+            throw new IllegalArgumentException("Expected CSV header: " + DAT_HEADER);
+        }
+
+        int saved = 0;
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) continue;
+            String[] t = line.split(",");
+            if (t.length != 7) {
+                throw new IllegalArgumentException("Line " + (i + 1) + " should have 7 values: " + line);
+            }
+
+            LocalDate date = LocalDate.parse(t[0]);
+            WeatherForecast f = forecastRepository
+                    .findByZoneIdAndForecastDateAndModelName(zone.getId(), date, modelName)
+                    .orElseGet(() -> new WeatherForecast(zone, date, modelName));
+            f.setPredTemp(Double.parseDouble(t[1]));
+            f.setPredRainfall(Double.parseDouble(t[2]));
+            f.setPredHumidity(Double.parseDouble(t[3]));
+            f.setPredPressure(Double.parseDouble(t[4]));
+            f.setPredWindSpeed(Double.parseDouble(t[5]));
+            f.setPredWindDir(Double.parseDouble(t[6]));
+            f.setGeneratedAt(LocalDateTime.now());
+            forecastRepository.save(f);
+            saved++;
+        }
+
+        logger.info("[WEATHER PIPELINE] Imported {} forecast days for model {}", saved, modelName);
+        return saved;
+    }
+        @Transactional(readOnly = true)
+    public List<Map<String, Object>> getDaily(LocalDate start, LocalDate end) {
+        MonitoringZone zone = telemetryService.getDefaultZone();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (WeatherDaily d : dailyRepository.findByZoneIdAndObsDateBetweenOrderByObsDateAsc(zone.getId(), start, end)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("date", d.getObsDate());
+            m.put("temp", d.getTempMean());
+            m.put("rainfall", d.getRainfallMm());
+            m.put("humidity", d.getHumidityPct());
+            m.put("pressure", d.getPressureHpa());
+            m.put("windSpeed", d.getWindSpeedKmh());
+            m.put("windDir", d.getWindDirDeg());
+            rows.add(m);
+        }
+        return rows;
+    }
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getForecast(String modelName) {
+        MonitoringZone zone = telemetryService.getDefaultZone();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (WeatherForecast f : forecastRepository.findByZoneIdAndModelNameOrderByForecastDateAsc(zone.getId(), modelName)) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("date", f.getForecastDate());
+            m.put("temp", f.getPredTemp());
+            m.put("rainfall", f.getPredRainfall());
+            m.put("humidity", f.getPredHumidity());
+            m.put("pressure", f.getPredPressure());
+            m.put("windSpeed", f.getPredWindSpeed());
+            m.put("windDir", f.getPredWindDir());
+            m.put("modelName", f.getModelName());
+            rows.add(m);
+        }
+        return rows;
     }
 
     @Transactional(readOnly = true)

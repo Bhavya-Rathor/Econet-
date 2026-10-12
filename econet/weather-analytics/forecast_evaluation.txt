@@ -1,0 +1,22 @@
+BACK-TEST over 5 seasons (2021-10-01 .. 2025-12-31),
+each predicted using only data from before that season started.
+
+attribute                    daily MAE         monthly-average MAE
+                     old     new  better        old     new   better
+temp                3.83    0.96     75%       3.80    0.65      83%
+rainfall            6.80    7.18     -6%       4.44    3.04      31%
+humidity           15.56    6.42     59%      14.80    3.33      78%
+pressure            4.83    1.69     65%       4.68    0.94      80%
+wind_speed          3.28    1.85     44%       2.60    0.68      74%
+wind_direction    114.67   44.36     61%
+
+Most recent season (2025-10-01 .. 2025-12-31): actual / new model / old method
+  2025-10  temp 25.99 / 26.49 / 28.71 C   rain  9.87 /  7.47 /  3.12 mm/day   humidity  81.9 /  77.8 /  64.2 %
+  2025-11  temp 25.07 / 24.55 / 28.71 C   rain  3.57 /  7.82 /  3.12 mm/day   humidity  76.8 /  83.0 /  64.2 %
+  2025-12  temp 23.05 / 23.22 / 28.71 C   rain  1.85 /  4.96 /  3.12 mm/day   humidity  77.2 /  82.4 /  64.2 %
+
+FORECAST (SEASONAL_HARMONIC_V1): 2026-10-01..2026-12-31, trained on all 3926 days
+month      days   temp C  rain mm  humid %  press hPa  wind km/h
+2026-10      31    26.61     7.22    77.18    1009.37       7.84
+2026-11      30    24.67     7.35    82.15    1011.68       8.28
+2026-12      31    23.36     4.39    81.09    1013.48       8.32

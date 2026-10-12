@@ -103,6 +103,9 @@
                 <button onclick="switchTab('forecast')" class="tab-btn px-3.5 py-2 text-sm font-semibold rounded-lg text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200 transition" data-tab="forecast">
                     <span class="flex items-center space-x-1.5"><i data-lucide="sparkles" class="w-4 h-4 text-indigo-600"></i><span>3-Month ML Forecast</span><span class="ml-1 px-1.5 py-0.2 bg-indigo-600 text-white text-[10px] font-bold rounded-full">ML</span></span>
                 </button>
+                                <button onclick="switchTab('weather')" class="tab-btn px-3 py-2 text-sm font-medium rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition" data-tab="weather">
+                    <span class="flex items-center space-x-2"><i data-lucide="cloud-rain" class="w-4 h-4"></i><span>Weather Analytics</span></span>
+                </button>
             </div>
         </nav>
     </header>
@@ -694,7 +697,39 @@
                 </div>
             </div>
         </section>
+                <!-- WEATHER ANALYTICS TAB: PostgreSQL + Hadoop MapReduce + forecast -->
+        <section id="tab-weather" class="tab-content hidden space-y-6">
+            <div class="glass-card rounded-2xl p-6 border border-slate-200">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900">Weather Analytics: Vellore</h2>
+                        <p class="text-sm text-slate-500">Observed Apr–Sep 2026 (Open-Meteo) and forecast Oct–Dec 2026 (seasonal harmonic model)</p>
+                    </div>
+                    <span id="weather-verify-badge" class="px-3 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-600">Checking…</span>
+                </div>
+            </div>
 
+            <div class="glass-card rounded-2xl p-6 border border-slate-200">
+                <h3 class="font-semibold text-slate-900">Daily temperature: observed vs forecast</h3>
+                <div class="mt-4 h-80"><canvas id="weatherTempChart"></canvas></div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-6 border border-slate-200">
+                <h3 class="font-semibold text-slate-900">Average daily rainfall by month</h3>
+                <p class="text-xs text-slate-500">Note the rise in Oct–Nov: the northeast monsoon.</p>
+                <div class="mt-4 h-72"><canvas id="weatherRainChart"></canvas></div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-6 border border-slate-200 overflow-x-auto">
+                <h3 class="font-semibold text-slate-900">Monthly averages computed by Hadoop MapReduce</h3>
+                <table class="mt-4 w-full text-sm">
+                    <thead class="text-left text-xs uppercase text-slate-500">
+                        <tr><th class="py-2">Period</th><th>Days</th><th>Temp °C</th><th>Rain mm/day</th><th>Humidity %</th><th>Pressure hPa</th><th>Wind km/h</th><th>Wind dir °</th></tr>
+                    </thead>
+                    <tbody id="weather-monthly-body" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
     </main>
 
     <!-- Footer -->
@@ -742,6 +777,7 @@
             if (tabId === 'alerts') loadAllAlerts();
             if (tabId === 'report') loadDailyReport();
             if (tabId === 'forecast') loadForecastData();
+            if (tabId === 'weather') loadWeatherData();
         }
 
         function setEl(id, val) {
@@ -997,6 +1033,92 @@
         }
 
         // Load 3-Month ML Forecast Data
+                // ===================== WEATHER ANALYTICS TAB =====================
+        let weatherTempChartInstance = null;
+        let weatherRainChartInstance = null;
+
+        async function loadWeatherData() {
+            try {
+                // 1. Ask the API for 4 things at the same time
+                const [dailyRes, monthlyRes, forecastRes, verifyRes] = await Promise.all([
+                    fetch('/api/weather/daily?start=2026-04-01&end=2026-09-30'),
+                    fetch('/api/weather/pipeline/summary'),
+                    fetch('/api/weather/pipeline/forecast'),
+                    fetch('/api/weather/pipeline/verify')
+                ]);
+                const daily = (await dailyRes.json()).data || [];
+                const monthly = (await monthlyRes.json()).data || [];
+                const forecast = (await forecastRes.json()).data || [];
+                const verify = await verifyRes.json();
+
+                // 2. Verification badge (Hadoop vs SQL)
+                const badge = document.getElementById('weather-verify-badge');
+                badge.innerText = verify.success ? '✓ Hadoop output verified against SQL' : '✗ Hadoop output not verified';
+                badge.className = 'px-3 py-1 text-xs font-semibold rounded-full ' +
+                    (verify.success ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700');
+
+                // 3. Chart 1: daily temperature, observed (solid) then forecast (dashed)
+                const tempLabels = [...daily.map(d => d.date), ...forecast.map(f => f.date)];
+                const observedTemps = [...daily.map(d => d.temp), ...forecast.map(() => null)];
+                const forecastTemps = [...daily.map(() => null), ...forecast.map(f => f.temp)];
+
+                if (weatherTempChartInstance) weatherTempChartInstance.destroy();
+                weatherTempChartInstance = new Chart(document.getElementById('weatherTempChart'), {
+                    type: 'line',
+                    data: {
+                        labels: tempLabels.map(d => String(d).substring(5)),  // "2026-04-01" -> "04-01"
+                        datasets: [
+                            { label: 'Observed temp (°C)', data: observedTemps, borderColor: '#f43f5e', pointRadius: 0, tension: 0.3 },
+                            { label: 'Forecast temp (°C)', data: forecastTemps, borderColor: '#6366f1', borderDash: [6, 4], pointRadius: 0, tension: 0.3 }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: { legend: { position: 'bottom' } },
+                        scales: { x: { ticks: { maxTicksLimit: 12 } }, y: { title: { display: true, text: '°C' } } }
+                    }
+                });
+
+                // 4. Chart 2: monthly rainfall, Hadoop months (observed) + forecast months
+                const observedMonths = monthly.filter(m => m.periodKey !== 'OVERALL');
+                const forecastByMonth = {};
+                forecast.forEach(f => {
+                    const month = String(f.date).substring(0, 7);         // "2026-10-05" -> "2026-10"
+                    (forecastByMonth[month] = forecastByMonth[month] || []).push(f.rainfall);
+                });
+                const forecastMonths = Object.keys(forecastByMonth);
+                const average = arr => arr.reduce((sum, x) => sum + x, 0) / arr.length;
+
+                if (weatherRainChartInstance) weatherRainChartInstance.destroy();
+                weatherRainChartInstance = new Chart(document.getElementById('weatherRainChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: [...observedMonths.map(m => m.periodKey), ...forecastMonths],
+                        datasets: [
+                            { label: 'Observed (Hadoop)', data: [...observedMonths.map(m => m.avgRainfall), ...forecastMonths.map(() => null)], backgroundColor: '#0ea5e9' },
+                            { label: 'Forecast', data: [...observedMonths.map(() => null), ...forecastMonths.map(k => +average(forecastByMonth[k]).toFixed(2))], backgroundColor: '#a5b4fc' }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom' } },
+                        scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'mm / day' } } }
+                    }
+                });
+
+                // 5. Table of Hadoop monthly averages
+                document.getElementById('weather-monthly-body').innerHTML = monthly.map(m => `
+                    <tr class="${m.periodKey === 'OVERALL' ? 'font-bold' : ''}">
+                        <td class="py-2">${m.periodKey}</td><td>${m.days}</td>
+                        <td>${m.avgTemp.toFixed(2)}</td><td>${m.avgRainfall.toFixed(2)}</td>
+                        <td>${m.avgHumidity.toFixed(2)}</td><td>${m.avgPressure.toFixed(2)}</td>
+                        <td>${m.avgWindSpeed.toFixed(2)}</td><td>${m.meanWindDir.toFixed(1)}</td>
+                    </tr>`).join('');
+            } catch (err) {
+                console.error('Weather Analytics tab failed to load:', err);
+            }
+        }
         let forecastChartInstance = null;
         async function loadForecastData() {
             try {
