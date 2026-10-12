@@ -1,0 +1,21 @@
+# Build output
+target/
+build/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+desktop.ini
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local secrets (copy econet-api/.env.example to econet-api/.env)
+.env

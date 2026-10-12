@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../SpringBoot"
+		},
+		{
+			"path": "../../../Downloads/HealthCentreService/HealthCentreService"
+		},
+		{
+			"path": "../../../Downloads/A&CService/A-CService"
+		}
+	],
+	"settings": {
+		"java.compile.nullAnalysis.mode": "automatic"
+	}
+}
