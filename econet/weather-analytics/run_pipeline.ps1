@@ -13,7 +13,9 @@ param(
     [string]$End = "2026-09-30",
     [string]$ApiBase = "http://localhost:8081",
     [ValidateSet("local", "hadoop")]
-    [string]$Mode = "local"
+    [string]$Mode = "local",
+    # Local folder Hadoop uses for job staging (hadoop mode only)
+    [string]$HadoopWorkDir = "$env:USERPROFILE\hadoop-data"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,12 +36,31 @@ if ($Mode -eq "local") {
     javac -d build src\WeatherAggregate.java src\WeatherLocalSimulator.java
     java -cp build WeatherLocalSimulator data\weather_data.dat mapreduce_output
 } else {
-    hdfs dfs -mkdir -p /weather_input
-    hdfs dfs -put -f data\weather_data.dat /weather_input/
-    hdfs dfs -rm -r -f /weather_output
-    hadoop jar weather.jar WeatherDriver /weather_input/weather_data.dat /weather_output
+    # Hadoop on Windows does not resolve relative local paths reliably, so pass full paths.
+    # Native commands don't throw in PowerShell, so check each exit code and stop on failure.
+    function Invoke-Step([string]$what, [scriptblock]$cmd) {
+        & $cmd
+        if ($LASTEXITCODE -ne 0) { Write-Host "FAILED: $what (exit code $LASTEXITCODE)" -ForegroundColor Red; exit 1 }
+    }
+    $datFile = Join-Path $PSScriptRoot "data\weather_data.dat"
+    $jarFile = Join-Path $PSScriptRoot "weather.jar"
+
+    Invoke-Step "create HDFS input folder" { hdfs dfs -mkdir -p /weather_input }
+    Invoke-Step "upload input to HDFS"     { hdfs dfs -put -f $datFile /weather_input/ }
+    Invoke-Step "remove old HDFS output"   { hdfs dfs -rm -r -f /weather_output }
+    # On Windows the local job runner fails to create its default staging dir
+    # (derived from hadoop.tmp.dir), so give it explicit file:/// working folders.
+    $hadoopWork = "file:///" + ($HadoopWorkDir -replace '\\', '/')
+    Invoke-Step "run MapReduce job" {
+        hadoop jar $jarFile WeatherDriver `
+            -D "mapreduce.jobtracker.staging.root.dir=$hadoopWork/staging" `
+            -D "mapreduce.cluster.local.dir=$hadoopWork/local" `
+            /weather_input/weather_data.dat /weather_output
+    }
+
     New-Item -ItemType Directory -Force mapreduce_output | Out-Null
-    hdfs dfs -cat /weather_output/part-r-00000 | Set-Content -Encoding ascii "mapreduce_output\part-r-00000"
+    $partFile = Join-Path $PSScriptRoot "mapreduce_output\part-r-00000"
+    Invoke-Step "download output from HDFS" { hdfs dfs -get -f /weather_output/part-r-00000 $partFile }
 }
 
 Write-Host "[4/5] Importing part-r-00000 into PostgreSQL (weather_monthly_summary)..." -ForegroundColor Cyan
